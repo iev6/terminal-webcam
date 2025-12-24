@@ -15,7 +15,8 @@ class Screen {
       fps: 0,
       targetFps: 0,
       frameCount: 0,
-      dimensions: { width: 0, height: 0 }
+      dimensions: { width: 0, height: 0 },
+      charsetName: 'Blocks'
     };
     // Performance optimization: batch renders
     this.renderScheduled = false;
@@ -233,7 +234,7 @@ class Screen {
    * @private
    */
   _getStatusText() {
-    const { fps, targetFps, dimensions } = this.stats;
+    const { fps, targetFps, dimensions, charsetName } = this.stats;
 
     const fpsText = fps > 0 ? `${fps}/${targetFps} FPS` : 'Starting...';
     const dimText = dimensions.width > 0
@@ -245,6 +246,8 @@ class Screen {
            chalk.cyan(` ${fpsText} `) +
            chalk.gray('|') +
            chalk.yellow(` ${dimText} `) +
+           chalk.gray('|') +
+           chalk.magenta(` ${charsetName || 'Blocks'} `) +
            chalk.gray('|') +
            chalk.green(' Press h for help ');
   }

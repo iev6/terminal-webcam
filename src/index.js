@@ -9,6 +9,7 @@ import TerminalRenderer from './renderer/terminal.js';
 import Screen from './ui/screen.js';
 import Controls from './ui/controls.js';
 import config, { createWebcamConfig, getOptimalCaptureResolution } from './webcam/config.js';
+import { CharacterSetManager } from './renderer/character-sets.js';
 import { promises as fs } from 'fs';
 import path from 'path';
 
@@ -18,6 +19,7 @@ class TerminalWebcamApp {
     this.renderer = null;
     this.screen = new Screen();
     this.controls = null;
+    this.charsetManager = new CharacterSetManager();
     this.isRunning = false;
     this.snapshotCounter = 0;
     this.captureMode = null;  // 'hardware' or 'software'
@@ -38,7 +40,9 @@ class TerminalWebcamApp {
       this.controls.setup(
         () => this.quit(),
         () => this.saveSnapshot(),
-        () => this.toggleLogs()
+        () => this.toggleLogs(),
+        () => this.nextCharset(),
+        () => this.prevCharset()
       );
 
       // Handle help toggle
@@ -112,6 +116,30 @@ class TerminalWebcamApp {
         console.log('[Logs] Performance logging disabled');
       }
     }
+  }
+
+  /**
+   * Switch to next character set
+   */
+  nextCharset() {
+    const charset = this.charsetManager.next();
+    if (this.renderer) {
+      this.renderer.setCharacterSet(charset.chars);
+    }
+    this.screen.updateStats({ charsetName: charset.name });
+    this.screen.showNotification(`Character set: ${charset.name} - ${charset.description}`);
+  }
+
+  /**
+   * Switch to previous character set
+   */
+  prevCharset() {
+    const charset = this.charsetManager.previous();
+    if (this.renderer) {
+      this.renderer.setCharacterSet(charset.chars);
+    }
+    this.screen.updateStats({ charsetName: charset.name });
+    this.screen.showNotification(`Character set: ${charset.name} - ${charset.description}`);
   }
 
   /**

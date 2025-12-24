@@ -228,6 +228,14 @@ class TerminalRenderer {
   isPerfLoggingEnabled() {
     return this.enablePerfLogging;
   }
+
+  /**
+   * Set character set for ASCII rendering
+   * @param {string} charRamp - String of characters from darkest to brightest
+   */
+  setCharacterSet(charRamp) {
+    this.converter.setCharacterRamp(charRamp);
+  }
 }
 
 export default TerminalRenderer;

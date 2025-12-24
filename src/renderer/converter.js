@@ -5,13 +5,21 @@ sharp.simd(true);
 sharp.concurrency(1);  // Single-threaded is faster for small images
 
 class ImageConverter {
-  constructor() {
+  constructor(charRamp = ' ░▒▓█') {
     this.lastWidth = 0;
     this.lastHeight = 0;
     // Grayscale character ramp from darkest to brightest
-    // Using block characters for better visual density
-    this.charRamp = ' ░▒▓█';
+    // Can be changed dynamically with setCharacterRamp()
+    this.charRamp = charRamp;
     this.mode = 'auto';  // 'auto', 'raw', 'sharp'
+  }
+
+  /**
+   * Update the character ramp used for ASCII conversion
+   * @param {string} charRamp - String of characters from darkest to brightest
+   */
+  setCharacterRamp(charRamp) {
+    this.charRamp = charRamp;
   }
 
   /**
