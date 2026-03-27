@@ -5,3 +5,5 @@ snapshots/
 *.jpg
 *.png
 *.jpeg
+src/native/libAVCapture.dylib
+*.cpuprofile

@@ -12,6 +12,7 @@ class TerminalRenderer {
     this.currentFps = 0;
     this.onFrameCallback = null;
     this.onStatsCallback = null;
+    this.onPerfCallback = null;
 
     // Performance monitoring
     this.performanceStats = {
@@ -103,15 +104,22 @@ class TerminalRenderer {
       );
       const sharpTime = performance.now() - sharpStart;
 
-      // Send frame to display callback
+      // Send frame to display callback — timed so render cost is visible in perf overlay
+      const renderStart = performance.now();
       if (this.onFrameCallback) {
         this.onFrameCallback(terminalFrame);
       }
+      const renderTime = performance.now() - renderStart;
 
       const totalTime = performance.now() - frameStart;
 
       // Track performance stats
       this._trackPerformance(captureTime, sharpTime, totalTime);
+
+      // Per-frame perf callback for real-time overlay
+      if (this.onPerfCallback) {
+        this.onPerfCallback({ captureMs: captureTime, convertMs: sharpTime, renderMs: renderTime, totalMs: totalTime });
+      }
 
       // Update FPS counter
       this._updateFps();
@@ -235,6 +243,10 @@ class TerminalRenderer {
    */
   setCharacterSet(charRamp) {
     this.converter.setCharacterRamp(charRamp);
+  }
+
+  setPerf(callback) {
+    this.onPerfCallback = callback;
   }
 }
 

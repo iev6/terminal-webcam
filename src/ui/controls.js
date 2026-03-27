@@ -9,17 +9,19 @@ class Controls {
     this.onToggleLogsCallback = null;
     this.onNextCharsetCallback = null;
     this.onPrevCharsetCallback = null;
+    this.onTogglePerfCallback = null;
   }
 
   /**
    * Setup keyboard controls
    */
-  setup(onQuit, onSnapshot, onToggleLogs, onNextCharset, onPrevCharset) {
+  setup(onQuit, onSnapshot, onToggleLogs, onNextCharset, onPrevCharset, onTogglePerf) {
     this.onQuitCallback = onQuit;
     this.onSnapshotCallback = onSnapshot;
     this.onToggleLogsCallback = onToggleLogs;
     this.onNextCharsetCallback = onNextCharset;
     this.onPrevCharsetCallback = onPrevCharset;
+    this.onTogglePerfCallback = onTogglePerf;
 
     // Quit on 'q', 'ESC', or Ctrl+C
     this.screen.key(['q', 'Q', 'escape', 'C-c'], () => {
@@ -60,6 +62,13 @@ class Controls {
         this.onPrevCharsetCallback();
       }
     });
+
+    // Toggle perf overlay on 'p'
+    this.screen.key(['p', 'P'], () => {
+      if (this.onTogglePerfCallback) {
+        this.onTogglePerfCallback();
+      }
+    });
   }
 
   /**
@@ -84,6 +93,7 @@ class Controls {
       chalk.white('l          ') + chalk.gray('- Toggle performance logs'),
       chalk.white('→, .       ') + chalk.gray('- Next character set'),
       chalk.white('←, ,       ') + chalk.gray('- Previous character set'),
+      chalk.white('p          ') + chalk.gray('- Toggle perf overlay'),
       '',
       chalk.dim('Press h or ? to close this help')
     ].join('\n');

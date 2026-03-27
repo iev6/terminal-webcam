@@ -5,8 +5,11 @@
   "main": "src/index.js",
   "type": "module",
   "scripts": {
-    "start": "node src/index.js",
-    "dev": "node src/index.js"
+    "start": "bun src/index.js",
+    "dev": "bun src/index.js",
+    "build:native": "bash scripts/build-native.sh",
+    "profile": "bun --cpu-prof src/index.js",
+    "flamegraph": "bunx speedscope *.cpuprofile"
   },
   "keywords": [
     "webcam",
@@ -18,9 +21,8 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "node-webcam": "^0.8.1",
-    "blessed": "^0.1.81",
-    "sharp": "^0.33.1",
-    "chalk": "^4.1.2"
+    "chalk": "^4.1.2",
+    "node-webcam": "^0.8.2",
+    "sharp": "^0.33.1"
   }
 }

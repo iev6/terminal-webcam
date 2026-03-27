@@ -1,9 +1,5 @@
 #!/usr/bin/env node
 
-// Suppress blessed debug output globally
-process.env.BLESSED_DEBUG = '0';
-process.env.DEBUG = '';
-
 import HybridCapture from './webcam/hybrid-capture.js';
 import TerminalRenderer from './renderer/terminal.js';
 import Screen from './ui/screen.js';
@@ -33,20 +29,21 @@ class TerminalWebcamApp {
 
       // Initialize UI
       this.screen.initialize();
-      const blessedScreen = this.screen.getScreen();
+      const screen = this.screen.getScreen();
 
       // Setup controls
-      this.controls = new Controls(blessedScreen);
+      this.controls = new Controls(screen);
       this.controls.setup(
         () => this.quit(),
         () => this.saveSnapshot(),
         () => this.toggleLogs(),
         () => this.nextCharset(),
-        () => this.prevCharset()
+        () => this.prevCharset(),
+        () => this.togglePerfOverlay()
       );
 
       // Handle help toggle
-      blessedScreen.on('help-toggle', () => {
+      screen.on('help-toggle', () => {
         this.screen.toggleHelp(this.controls.getHelpText());
       });
 
@@ -55,9 +52,10 @@ class TerminalWebcamApp {
 
       // Initialize hybrid capture (tries hardware first, falls back to software)
       this.captureMode = await this.webcam.initialize(termWidth, termHeight);
+      this.screen.updateStats({ mode: this.captureMode });
 
       // Handle terminal resize
-      blessedScreen.on('resize', () => {
+      screen.on('resize', () => {
         const { width: newTermWidth, height: newTermHeight } = this.screen.getVideoDimensions();
         this.webcam.updateResolution(newTermWidth, newTermHeight);
       });
@@ -76,6 +74,7 @@ class TerminalWebcamApp {
         (frame) => this.onFrame(frame),
         (stats) => this.onStats(stats)
       );
+      this.renderer.setPerf((timing) => this.screen.updatePerf(timing));
 
       this.screen.render();
 
@@ -116,6 +115,14 @@ class TerminalWebcamApp {
         console.log('[Logs] Performance logging disabled');
       }
     }
+  }
+
+  /**
+   * Toggle real-time perf overlay (press 'p')
+   */
+  togglePerfOverlay() {
+    const visible = this.screen.togglePerfOverlay();
+    this.screen.showNotification(`Perf overlay: ${visible ? 'ON' : 'OFF'}`);
   }
 
   /**

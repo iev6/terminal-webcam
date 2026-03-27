@@ -16,8 +16,8 @@ function getVideoBoxDimensions() {
   const { width, height } = getTerminalSize();
 
   return {
-    width: width - 2,      // Leave space for borders
-    height: height - 4     // Leave space for status bar and borders
+    width: width,        // Full width (no borders)
+    height: height - 2   // Leave 2 rows for status bar
   };
 }
 

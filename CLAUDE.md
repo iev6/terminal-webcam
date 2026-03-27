@@ -4,20 +4,31 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Terminal Webcam is a TUI application that streams live webcam video to the terminal using grayscale block characters. It features GPU hardware acceleration (FFmpeg) with automatic fallback to software rendering (Sharp), achieving 80-120 FPS on modern hardware.
+Terminal Webcam is a TUI application that streams live webcam video to the terminal using grayscale block characters. It uses a three-tier hardware acceleration pipeline and direct ANSI rendering, achieving 80-120 FPS on modern hardware.
 
 ## Commands
 
 **Run the application:**
 ```bash
-npm start
+bun start
 # or
-node src/index.js
+bun src/index.js
 ```
 
 **Install dependencies:**
 ```bash
-npm install
+bun install
+```
+
+**Build the native macOS dylib (required for AVFoundation path):**
+```bash
+bun run build:native
+```
+
+**Profile with CPU flamegraph:**
+```bash
+bun run profile        # run app, quit with 'q', generates .cpuprofile
+bun run flamegraph     # open in speedscope
 ```
 
 **Configuration:**
@@ -25,154 +36,98 @@ Edit `src/webcam/config.js` to adjust FPS, resolution, quality, and camera devic
 
 ## Architecture
 
-### High-Level System Design
+### Capture Pipeline (three-tier, auto-detected)
 
-The application uses a **hybrid capture system** that automatically selects between GPU-accelerated hardware rendering or optimized software rendering:
+```
+Priority 1: AVFoundation (macOS + Bun FFI)
+  Swift dylib → AVCaptureSession → Y-plane (grayscale) → vImageScale_Planar8 → Buffer
+  Latency: 0.3–1ms
 
-**Hardware Mode (FFmpeg with GPU acceleration):**
-```
-Webcam → FFmpeg (GPU) → Raw grayscale pixels → ASCII → Terminal
-         ↓
-   GPU handles: decode, resize, grayscale (0.5-2ms)
-```
+Priority 2: FFmpeg + VideoToolbox (subprocess, GPU)
+  FFmpeg subprocess → Raw grayscale pixels via stdout → Buffer
+  Latency: 0.5–2ms
 
-**Software Mode (Fallback):**
+Priority 3: Software (node-webcam + Sharp)
+  node-webcam → JPEG file → Sharp resize/grayscale → Buffer
+  Latency: 2–7ms
 ```
-Webcam → node-webcam → Buffer → Sharp (CPU) → Raw pixels → ASCII → Terminal
-                                 ↓
-                         Resize, grayscale (2-5ms)
-```
-
-**Performance:**
-- Hardware mode: 80-120 FPS capable (1-3ms per frame)
-- Software mode: 40-60 FPS capable (2-7ms per frame)
-- Automatic detection and graceful fallback
 
 ### Component Responsibilities
 
 **`src/index.js` - TerminalWebcamApp**
 - Application orchestrator and lifecycle manager
-- Uses HybridCapture for automatic hardware/software selection
-- Handles snapshots, stats updates, and graceful shutdown
+- Wires up capture, renderer, screen, controls
 - Manages SIGINT/SIGTERM for cleanup
 
 **`src/webcam/` - Capture System**
-- `hybrid-capture.js`: **Main capture manager**
-  - Attempts FFmpeg hardware acceleration first
-  - Falls back to software rendering if FFmpeg unavailable
-  - Provides unified interface for both modes
-  - Reports active mode to application
+- `hybrid-capture.js`: Priority cascade — tries AVFoundation, then FFmpeg, then software
+- `avfoundation-capture.js`: Bun FFI wrapper — loads `src/native/libAVCapture.dylib`, polls at ~60fps
+- `ffmpeg-capture.js`: FFmpeg subprocess with platform GPU flags (VideoToolbox/VAAPI/DXVA2)
+- `capture.js`: Software fallback (node-webcam + Sharp)
+- `config.js`: Dynamic resolution (terminal size × 6 multiplier)
 
-- `ffmpeg-capture.js`: **Hardware-accelerated capture** ⭐
-  - Uses FFmpeg with platform-specific GPU acceleration
-  - VideoToolbox (macOS), VAAPI (Linux), DXVA2 (Windows)
-  - Streams raw grayscale pixels from stdout (no JPEG encoding)
-  - GPU handles: decode, scale, color conversion
-  - **0.5-2ms processing time**
-
-- `capture.js`: **Software capture (fallback)**
-  - Uses node-webcam + Sharp (CPU-based)
-  - Continuous capture mode with background loop
-  - In-memory buffer caching
-  - **2-5ms processing time**
-
-- `config.js`: Dynamic resolution calculation based on terminal size
+**`src/native/` - Swift dylib**
+- `AVCapture.swift`: Exported C functions `av_capture_init/get_frame/update_resolution/stop`
+- Uses `kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange` — Y plane is already grayscale
+- Scales with `vImageScale_Planar8` (Accelerate framework, SIMD)
+- Thread-safe via `NSLock`
 
 **`src/renderer/` - Processing Pipeline**
-- `terminal.js`: TerminalRenderer class
-  - Frame scheduling using `setTimeout` at target FPS
-  - Pulls latest frame buffer from capture system
-  - Performance monitoring with hardware/software mode awareness
-  - Tracks detailed timing: capture, processing, total
-  - Logs stats every 100 frames
-
-- `converter.js`: ImageConverter class ⭐
-  - **Auto-detection**: Detects raw pixels vs JPEG buffers
-  - **Hardware path**: Raw pixels already scaled & grayscale → direct to ASCII (<0.5ms)
-  - **Software path**: Sharp pipeline with SIMD optimizations (2-5ms)
-    - Uses `sharp.simd(true)` for CPU SIMD instructions
-    - Fastest resize kernel (`nearest`)
-    - Sequential read optimization
-  - Character ramp: ` ░▒▓█` (5 brightness levels)
-  - Array buffer optimization for ASCII conversion
+- `terminal.js`: Render loop, per-frame timing (capture/convert/render/total), `setPerf()` callback
+- `converter.js`: Auto-detects raw pixels vs JPEG; hardware path is direct pixel-to-ASCII (<0.5ms)
+- `character-sets.js`: 10 character ramps (blocks, braille, matrix, etc.)
 
 **`src/ui/` - Terminal Interface**
-- `screen.js`: Blessed screen setup with three components:
-  - Video box (100% width, 96% height): Displays ASCII frames
-  - Status bar (2 lines): Shows FPS, resolution, controls
-  - Help overlay (modal): Keyboard shortcuts
-  - **Batched rendering**: Uses `setImmediate()` to render once per frame cycle
-- `controls.js`: Keyboard handling (q/ESC/Ctrl+C quit, h/? help, s snapshot)
+- `screen.js`: Direct ANSI renderer — no TUI framework. Alt screen buffer, cursor positioning,
+  status bar, help overlay, notifications, real-time perf overlay (`_renderPerfOverlay`)
+- `controls.js`: Keyboard bindings via stdin raw mode
 
 **`src/utils/terminal-size.js`**
-- Terminal dimension detection
-- Calculates available video box space (accounts for borders/status bar)
+- `getVideoBoxDimensions()`: Returns `{width: cols, height: rows - 2}` (full width, 2 rows for status bar)
 
-### Key Performance Patterns
+### Renderer details
 
-1. **Hardware Acceleration**: GPU-based decode/resize/grayscale (0.5-2ms vs 3-5ms CPU) ⭐
-2. **Hybrid Architecture**: Automatic hardware detection with software fallback
-3. **Dynamic Resolution**: Capture resolution scales with terminal size
-4. **In-Memory Buffers**: Frames cached in memory, eliminating file read overhead
-5. **Raw Pixel Streaming**: FFmpeg outputs raw grayscale (no JPEG encode/decode)
-6. **SIMD Optimizations**: Sharp uses CPU SIMD instructions when available
-7. **Array Buffers**: Optimized ASCII conversion with typed arrays
-8. **Batched Rendering**: UI updates batched with `setImmediate()`
+The screen renders by writing ANSI escape sequences directly to `process.stdout`:
+- `\x1b[?1049h` — enter alt screen buffer
+- `\x1b[?25l` / `\x1b[?25h` — hide/show cursor
+- `\x1b[H` — cursor home (top-left, no clear; overwrites in-place each frame)
+- `\x1b[row;colH` — absolute cursor position
 
-**Performance Gains:**
-- Hardware mode: 85-90% faster than original (1-3ms per frame)
-- Software mode: 65-80% faster than original (2-7ms per frame)
+Keyboard input is handled via `process.stdin` in raw mode. The `CompatScreen` class (inside `screen.js`) implements a minimal EventEmitter that maps raw byte sequences to blessed-style key names so `controls.js` is unchanged.
 
-### Technical Implementation Details
+### Perf overlay
 
-**ES6 Modules**: Project uses `"type": "module"` in package.json
-
-**Async Patterns**: Hybrid async/await with callbacks for frame delivery
-
-**Graceful Shutdown**:
-- Global handlers for `uncaughtException`, `unhandledRejection`
-- Process signal handlers (`SIGINT`, `SIGTERM`)
-- Cleanup sequence: stop renderer → stop capture → destroy screen → exit
-
-**Snapshot System**:
-- Saves to `snapshots/` directory
-- Timestamp format: `snapshot-2025-12-13T17-33-07-227Z.jpg`
-- Uses current frame from temp file
+Press `p` to toggle. Rendered every frame directly over the video content:
+- 8 rows tall, positioned above the status bar
+- Shows: FPS, mode, per-phase timing bars (capture/convert/render/idle), sparkline history
+- Data comes from `terminal.js` via `renderer.setPerf(callback)`
 
 ## Configuration Points
 
 **Webcam Settings** (`src/webcam/config.js`):
 - `targetFPS`: Frame rate target (default: 20)
-- `width`, `height`: Capture resolution (default: 1024x576)
-- `quality`: JPEG quality 0-100 (default: 75)
+- `width`, `height`: Capture resolution (default: 1024x576, auto-scaled to terminal)
+- `quality`: JPEG quality for software fallback (default: 75)
 - `device`: Camera device (null = default)
-- `tmpFile`: Temporary frame location (default: `/tmp/webcam-frame.jpg`)
-
-**Rendering**:
-- Frame delay: Calculated as `1000 / targetFPS`
-- Terminal dimensions: Auto-detected from `process.stdout.columns/rows`
-- Video box size: Terminal width-2, height-4 (accounts for UI elements)
 
 **Character Mapping**:
-- 5-level brightness ramp: ` ░▒▓█`
-- Grayscale mapping divides 0-255 range into 5 bins
-- Space character represents darkest pixels, full block (█) represents brightest
+- Default ramp: ` ░▒▓█` (5 brightness levels)
+- 10 ramps total, cycle with `→` / `←`
 
 ## Dependencies
 
-- **node-webcam** (v0.8.2): Webcam capture interface
-- **blessed** (v0.1.81): Terminal UI framework
-- **sharp** (v0.33.5): High-performance image processing
-- **chalk** (v4.1.2): Terminal color styling (for status/notifications)
+- **sharp** (v0.33.x): Image processing for software fallback
+- **node-webcam** (v0.8.2): Camera capture for software fallback
+- **chalk** (v4.1.2): Status bar colors
+
+No TUI framework. The `blessed` dependency was removed; rendering uses direct ANSI codes.
 
 ## Common Issues
 
-**Camera permissions**: Ensure terminal/Node.js has webcam access
-- macOS: System Preferences → Security & Privacy → Camera
-- Linux: Check `/dev/video*` permissions
+**Camera permissions**: Grant access to your terminal in System Settings → Privacy & Security → Camera.
 
-**Performance**: If stuttering occurs:
-- Reduce `targetFPS` in config (try 15 or 10)
-- Lower resolution (e.g., 800x450)
-- Decrease JPEG quality (try 60-70)
-- Use GPU-accelerated terminal (iTerm2, Alacritty, WezTerm)
+**AVFoundation path not activating**: Run `bun run build:native` first. Requires Xcode command line tools.
+
+**FFmpeg not found**: `brew install ffmpeg`. App falls back to software mode automatically.
+
+**Performance**: If stuttering occurs, reduce `targetFPS` or use a GPU-accelerated terminal (iTerm2, Alacritty, WezTerm).

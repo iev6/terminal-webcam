@@ -1,16 +1,22 @@
 import FFmpegCapture from './ffmpeg-capture.js';
 import WebcamCapture from './capture.js';
+import AVFoundationCapture from './avfoundation-capture.js';
+import os from 'os';
 
 /**
  * Hybrid capture manager
- * Tries FFmpeg hardware acceleration first, falls back to software rendering
+ * Priority order:
+ * 1. AVFoundation (macOS native, Bun FFI, fastest)
+ * 2. FFmpeg (hardware accelerated, cross-platform)
+ * 3. Software (node-webcam + Sharp, fallback)
  */
 class HybridCapture {
   constructor() {
+    this.avCapture = null;
     this.ffmpegCapture = null;
     this.softwareCapture = null;
     this.activeCapture = null;
-    this.mode = null;  // 'hardware' or 'software'
+    this.mode = null;  // 'avfoundation', 'hardware', or 'software'
     this.width = 600;
     this.height = 150;
   }
@@ -19,13 +25,24 @@ class HybridCapture {
    * Initialize capture with the best available method
    * @param {number} width - Capture width
    * @param {number} height - Capture height
-   * @returns {Promise<string>} Mode used ('hardware' or 'software')
+   * @returns {Promise<string>} Mode used ('avfoundation', 'hardware', or 'software')
    */
   async initialize(width, height) {
     this.width = width;
     this.height = height;
 
-    // Silent initialization - mode details available with 'l' key
+    // Try AVFoundation first (macOS + Bun FFI)
+    if (os.platform() === 'darwin') {
+      this.avCapture = new AVFoundationCapture();
+      const avOk = await this.avCapture.initialize(width, height);
+      if (avOk) {
+        this.activeCapture = this.avCapture;
+        this.mode = 'avfoundation';
+        return 'avfoundation';
+      }
+    }
+
+    // Try FFmpeg hardware acceleration
     this.ffmpegCapture = new FFmpegCapture();
     const ffmpegAvailable = await this.ffmpegCapture.initialize(width, height);
 
@@ -36,8 +53,7 @@ class HybridCapture {
       return 'hardware';
     }
 
-    // Fallback to software rendering (silent)
-
+    // Software fallback
     this.softwareCapture = new WebcamCapture();
     this.softwareCapture.initialize(width, height);
     this.softwareCapture.startContinuousCapture();
@@ -61,6 +77,9 @@ class HybridCapture {
    * @returns {string|null} File path
    */
   getLatestFramePath() {
+    if (this.mode === 'avfoundation') {
+      return null;
+    }
     if (this.mode === 'software' && this.softwareCapture) {
       return this.softwareCapture.getLatestFramePath();
     }
@@ -89,6 +108,9 @@ class HybridCapture {
    * Cleanup resources
    */
   async cleanup() {
+    if (this.avCapture) {
+      await this.avCapture.cleanup();
+    }
 
     if (this.ffmpegCapture) {
       await this.ffmpegCapture.cleanup();
@@ -103,7 +125,7 @@ class HybridCapture {
 
   /**
    * Get current capture mode
-   * @returns {string} 'hardware' or 'software'
+   * @returns {string} 'avfoundation', 'hardware', or 'software'
    */
   getMode() {
     return this.mode;
@@ -114,7 +136,7 @@ class HybridCapture {
    * @returns {boolean}
    */
   isHardwareAccelerated() {
-    return this.mode === 'hardware';
+    return this.mode === 'avfoundation' || this.mode === 'hardware';
   }
 
   /**
@@ -133,14 +155,12 @@ class HybridCapture {
 
   /**
    * Save snapshot (software mode only)
-   * For hardware mode, we need to capture a separate snapshot
+   * For hardware/avfoundation mode, snapshots not yet supported
    */
   async saveSnapshot() {
     if (this.mode === 'software' && this.softwareCapture) {
-      // Return the temp file path for copying
       return this.softwareCapture.getLatestFramePath();
-    } else if (this.mode === 'hardware') {
-      // For hardware mode, snapshots not yet supported
+    } else if (this.mode === 'hardware' || this.mode === 'avfoundation') {
       return null;
     }
     return null;
