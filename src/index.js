@@ -154,37 +154,20 @@ class TerminalWebcamApp {
    */
   async saveSnapshot() {
     try {
-      // Create snapshots directory if it doesn't exist
       const snapshotsDir = path.join(process.cwd(), 'snapshots');
       await fs.mkdir(snapshotsDir, { recursive: true });
 
-      // Generate filename with timestamp
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
       const filename = `snapshot-${timestamp}.jpg`;
       const filepath = path.join(snapshotsDir, filename);
 
-      if (this.captureMode === 'hardware') {
-        // Hardware mode: convert raw pixels back to JPEG
-        const frame = this.webcam.getLatestFrame();
-        if (frame) {
-          // For now, show a message that snapshots aren't supported in hardware mode
-          this.screen.showNotification('Snapshot in hardware mode: coming soon');
-          // TODO: Convert raw pixels to JPEG using Sharp
-        } else {
-          this.screen.showNotification('No frame available');
-        }
+      const saved = await this.webcam.saveAsImage(filepath);
+      if (saved) {
+        this.snapshotCounter++;
+        this.screen.showNotification(`Snapshot saved: ${filename}`);
       } else {
-        // Software mode: copy the JPEG file
-        const tmpFile = this.webcam.getLatestFramePath();
-        if (tmpFile) {
-          await fs.copyFile(tmpFile, filepath);
-          this.snapshotCounter++;
-          this.screen.showNotification(`Snapshot saved: ${filename}`);
-        } else {
-          this.screen.showNotification('No frame available for snapshot');
-        }
+        this.screen.showNotification('No frame available');
       }
-
     } catch (error) {
       this.screen.showNotification('Error saving snapshot: ' + error.message);
     }

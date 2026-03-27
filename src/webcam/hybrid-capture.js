@@ -2,6 +2,8 @@ import FFmpegCapture from './ffmpeg-capture.js';
 import WebcamCapture from './capture.js';
 import AVFoundationCapture from './avfoundation-capture.js';
 import os from 'os';
+import sharp from 'sharp';
+import { promises as fsPromises } from 'fs';
 
 /**
  * Hybrid capture manager
@@ -154,16 +156,33 @@ class HybridCapture {
   }
 
   /**
-   * Save snapshot (software mode only)
-   * For hardware/avfoundation mode, snapshots not yet supported
+   * Save the latest frame to a JPEG file.
+   * Works across all capture modes:
+   *   - software:        copies the existing JPEG temp file
+   *   - hardware/avfoundation: encodes raw grayscale pixels via Sharp
+   *
+   * @param {string} filepath - Destination path (should end in .jpg)
+   * @returns {Promise<boolean>} true if saved successfully
    */
-  async saveSnapshot() {
+  async saveAsImage(filepath) {
     if (this.mode === 'software' && this.softwareCapture) {
-      return this.softwareCapture.getLatestFramePath();
-    } else if (this.mode === 'hardware' || this.mode === 'avfoundation') {
-      return null;
+      const tmpPath = this.softwareCapture.getLatestFramePath();
+      if (!tmpPath) return false;
+      await fsPromises.copyFile(tmpPath, filepath);
+      return true;
     }
-    return null;
+
+    // Hardware / AVFoundation: raw single-channel grayscale buffer
+    const frame = this.getLatestFrame();
+    if (!frame) return false;
+
+    await sharp(frame, {
+      raw: { width: this.width, height: this.height, channels: 1 }
+    })
+      .jpeg({ quality: 90 })
+      .toFile(filepath);
+
+    return true;
   }
 }
 
