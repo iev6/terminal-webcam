@@ -40,6 +40,7 @@ class CompatScreen extends EventEmitter {
       ',': ',', '<': '<',
       '\x1b[C': 'right',
       '\x1b[D': 'left',
+      'c': 'c', 'C': 'C',
     };
 
     const mapped = keyMap[rawKey];
@@ -65,7 +66,8 @@ class Screen {
       targetFps: 0,
       frameCount: 0,
       dimensions: { width: 0, height: 0 },
-      charsetName: 'Blocks'
+      charsetName: 'Blocks',
+      colorMode: false
     };
   }
 
@@ -223,13 +225,15 @@ class Screen {
   }
 
   _getStatusText() {
-    const { fps, targetFps, dimensions, charsetName } = this.stats;
+    const { fps, targetFps, dimensions, charsetName, colorMode } = this.stats;
     const fpsText = fps > 0 ? `${fps}/${targetFps} FPS` : 'Starting...';
     const dimText = dimensions.width > 0 ? `${dimensions.width}x${dimensions.height}` : '--';
+    const colorText = colorMode ? 'Color' : 'Gray';
     return chalk.bold.white(` Terminal Webcam `) +
            chalk.gray('|') + chalk.cyan(` ${fpsText} `) +
            chalk.gray('|') + chalk.yellow(` ${dimText} `) +
            chalk.gray('|') + chalk.magenta(` ${charsetName || 'Blocks'} `) +
+           chalk.gray('|') + chalk.green(` ${colorText} `) +
            chalk.gray('|') + chalk.green(' Press h for help ');
   }
 

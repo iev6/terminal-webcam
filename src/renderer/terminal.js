@@ -248,6 +248,14 @@ class TerminalRenderer {
   setPerf(callback) {
     this.onPerfCallback = callback;
   }
+
+  /**
+   * Enable or disable color mode
+   * @param {boolean} enabled
+   */
+  setColorMode(enabled) {
+    this.converter.setColorMode(enabled);
+  }
 }
 
 export default TerminalRenderer;

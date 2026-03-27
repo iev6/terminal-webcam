@@ -21,6 +21,7 @@ class HybridCapture {
     this.mode = null;  // 'avfoundation', 'hardware', or 'software'
     this.width = 600;
     this.height = 150;
+    this.colorMode = false;
   }
 
   /**
@@ -86,6 +87,21 @@ class HybridCapture {
       return this.softwareCapture.getLatestFramePath();
     }
     return null;
+  }
+
+  /**
+   * Set color mode (fans out to the active capture backend)
+   * @param {boolean} enabled
+   */
+  setColorMode(enabled) {
+    this.colorMode = enabled;
+
+    if (this.mode === 'avfoundation' && this.avCapture) {
+      this.avCapture.setColorMode(enabled);
+    } else if (this.mode === 'hardware' && this.ffmpegCapture) {
+      this.ffmpegCapture.setColorMode(enabled);
+    }
+    // software mode: no-op (converter handles it)
   }
 
   /**
@@ -177,7 +193,7 @@ class HybridCapture {
     if (!frame) return false;
 
     await sharp(frame, {
-      raw: { width: this.width, height: this.height, channels: 1 }
+      raw: { width: this.width, height: this.height, channels: this.colorMode ? 3 : 1 }
     })
       .jpeg({ quality: 90 })
       .toFile(filepath);

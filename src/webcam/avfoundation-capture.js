@@ -34,6 +34,10 @@ async function loadFFI() {
         args: [],
         returns: FFIType.void,
       },
+      av_capture_set_color: {
+        args: [FFIType.i32],
+        returns: FFIType.void,
+      },
     });
     return ffi;
   } catch (e) {
@@ -51,6 +55,7 @@ class AVFoundationCapture {
     this._pollTimer = null;
     this._lib = null;
     this._ptrFn = null;
+    this.colorMode = false;
   }
 
   /**
@@ -74,7 +79,8 @@ class AVFoundationCapture {
 
       this.width = width;
       this.height = height;
-      frameBuffer = Buffer.allocUnsafe(width * height);
+      const stride = this.colorMode ? 3 : 1;
+      frameBuffer = Buffer.allocUnsafe(width * height * stride);
 
       const ok = this._lib.symbols.av_capture_init(width, height);
       if (!ok) return false;
@@ -119,12 +125,24 @@ class AVFoundationCapture {
     return this.currentBuffer;
   }
 
+  setColorMode(enabled) {
+    this.colorMode = enabled;
+    const stride = this.colorMode ? 3 : 1;
+    frameBuffer = Buffer.allocUnsafe(this.width * this.height * stride);
+    this.currentBuffer = null;
+
+    if (this._lib) {
+      this._lib.symbols.av_capture_set_color(enabled ? 1 : 0);
+    }
+  }
+
   updateResolution(width, height) {
     if (width === this.width && height === this.height) return;
 
     this.width = width;
     this.height = height;
-    frameBuffer = Buffer.allocUnsafe(width * height);
+    const stride = this.colorMode ? 3 : 1;
+    frameBuffer = Buffer.allocUnsafe(width * height * stride);
 
     if (this._lib) {
       this._lib.symbols.av_capture_update_resolution(width, height);

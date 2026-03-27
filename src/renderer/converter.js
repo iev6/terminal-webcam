@@ -12,6 +12,7 @@ class ImageConverter {
     // Can be changed dynamically with setCharacterRamp()
     this.charRamp = charRamp;
     this.mode = 'auto';  // 'auto', 'raw', 'sharp'
+    this.colorMode = false;
   }
 
   /**
@@ -23,8 +24,16 @@ class ImageConverter {
   }
 
   /**
+   * Enable or disable color mode (ANSI truecolor output)
+   * @param {boolean} enabled
+   */
+  setColorMode(enabled) {
+    this.colorMode = enabled;
+  }
+
+  /**
    * Convert image buffer to terminal-displayable ASCII format
-   * Supports both raw grayscale pixels (from FFmpeg) and JPEG buffers (from node-webcam)
+   * Supports raw grayscale pixels, raw RGB24 pixels, and JPEG buffers
    * @param {Buffer} imageSource - Raw pixel buffer or JPEG buffer
    * @param {number} width - Terminal width in characters
    * @param {number} height - Terminal height in characters
@@ -41,13 +50,14 @@ class ImageConverter {
       this.lastWidth = width;
       this.lastHeight = height;
 
-      // Detect if this is raw pixel data or needs Sharp processing
-      const expectedRawBytes = width * height;  // 1 byte per pixel for grayscale
-      const isRawPixels = imageSource.length === expectedRawBytes;
+      const expectedGray = width * height;       // 1 byte/pixel
+      const expectedRgb  = width * height * 3;   // 3 bytes/pixel
 
-      if (isRawPixels && this.mode !== 'sharp') {
-        // HARDWARE ACCELERATED PATH: FFmpeg already gave us raw grayscale pixels
-        // No processing needed - pixels are already scaled and grayscale!
+      if (imageSource.length === expectedRgb && this.mode !== 'sharp') {
+        // RGB24 raw path (color mode AVFoundation / FFmpeg)
+        return this._rgbPixelsToAscii(imageSource, width, height);
+      } else if (imageSource.length === expectedGray && this.mode !== 'sharp') {
+        // HARDWARE ACCELERATED PATH: raw grayscale pixels, already scaled
         return this._pixelsToAscii(imageSource, width, height);
       } else {
         // SOFTWARE PATH: Use Sharp to process JPEG buffer
@@ -68,7 +78,7 @@ class ImageConverter {
    * @private
    */
   async _convertWithSharp(imageSource, width, height) {
-    const { data, info } = await sharp(imageSource, {
+    let pipeline = sharp(imageSource, {
       sequentialRead: true,
       limitInputPixels: false
     })
@@ -78,12 +88,64 @@ class ImageConverter {
         fit: 'contain',
         kernel: 'nearest',  // Fastest kernel
         background: { r: 0, g: 0, b: 0, alpha: 1 }
-      })
-      .grayscale()
-      .raw()
-      .toBuffer({ resolveWithObject: true });
+      });
 
-    return this._pixelsToAscii(data, info.width, info.height);
+    if (this.colorMode) {
+      const { data, info } = await pipeline
+        .toFormat('raw')
+        .toBuffer({ resolveWithObject: true });
+      return this._rgbPixelsToAscii(data, info.width, info.height);
+    } else {
+      const { data, info } = await pipeline
+        .grayscale()
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+      return this._pixelsToAscii(data, info.width, info.height);
+    }
+  }
+
+  /**
+   * Convert RGB24 pixel data to ANSI truecolor ASCII art
+   * Uses run-length optimization: only emits a new escape code when color changes.
+   * @private
+   * @param {Buffer} pixelData - Raw RGB24 pixel data (3 bytes per pixel)
+   * @param {number} width - Image width
+   * @param {number} height - Image height
+   * @returns {string} ANSI colored ASCII representation
+   */
+  _rgbPixelsToAscii(pixelData, width, height) {
+    const lines = [];
+    const rampLength = this.charRamp.length;
+
+    for (let y = 0; y < height; y++) {
+      let line = '';
+      let prevR = -1, prevG = -1, prevB = -1;
+      const rowStart = y * width * 3;
+
+      for (let x = 0; x < width; x++) {
+        const i = rowStart + x * 3;
+        const r = pixelData[i];
+        const g = pixelData[i + 1];
+        const b = pixelData[i + 2];
+
+        // Luma for character selection
+        const luma = (r * 77 + g * 150 + b * 29) >> 8;  // integer approximation of 0.299/0.587/0.114
+        const index = Math.floor((luma / 255) * (rampLength - 1));
+
+        // Only emit new ANSI code when color actually changes (run-length optimization)
+        if (r !== prevR || g !== prevG || b !== prevB) {
+          line += `\x1b[38;2;${r};${g};${b}m`;
+          prevR = r; prevG = g; prevB = b;
+        }
+
+        line += this.charRamp[index];
+      }
+
+      line += '\x1b[0m';  // Reset at end of each line
+      lines.push(line);
+    }
+
+    return lines.join('\n');
   }
 
   /**

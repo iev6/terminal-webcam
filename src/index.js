@@ -19,6 +19,7 @@ class TerminalWebcamApp {
     this.isRunning = false;
     this.snapshotCounter = 0;
     this.captureMode = null;  // 'hardware' or 'software'
+    this.colorMode = false;
   }
 
   /**
@@ -39,7 +40,8 @@ class TerminalWebcamApp {
         () => this.toggleLogs(),
         () => this.nextCharset(),
         () => this.prevCharset(),
-        () => this.togglePerfOverlay()
+        () => this.togglePerfOverlay(),
+        () => this.toggleColorMode()
       );
 
       // Handle help toggle
@@ -98,6 +100,17 @@ class TerminalWebcamApp {
   onStats(stats) {
     if (!this.isRunning) return;
     this.screen.updateStats(stats);
+  }
+
+  /**
+   * Toggle color mode
+   */
+  toggleColorMode() {
+    this.colorMode = !this.colorMode;
+    this.renderer.setColorMode(this.colorMode);
+    this.webcam.setColorMode(this.colorMode);
+    this.screen.updateStats({ colorMode: this.colorMode });
+    this.screen.showNotification(`Color mode: ${this.colorMode ? 'ON' : 'OFF'}`);
   }
 
   /**

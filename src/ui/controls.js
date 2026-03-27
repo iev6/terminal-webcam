@@ -10,18 +10,20 @@ class Controls {
     this.onNextCharsetCallback = null;
     this.onPrevCharsetCallback = null;
     this.onTogglePerfCallback = null;
+    this.onToggleColorCallback = null;
   }
 
   /**
    * Setup keyboard controls
    */
-  setup(onQuit, onSnapshot, onToggleLogs, onNextCharset, onPrevCharset, onTogglePerf) {
+  setup(onQuit, onSnapshot, onToggleLogs, onNextCharset, onPrevCharset, onTogglePerf, onToggleColor) {
     this.onQuitCallback = onQuit;
     this.onSnapshotCallback = onSnapshot;
     this.onToggleLogsCallback = onToggleLogs;
     this.onNextCharsetCallback = onNextCharset;
     this.onPrevCharsetCallback = onPrevCharset;
     this.onTogglePerfCallback = onTogglePerf;
+    this.onToggleColorCallback = onToggleColor;
 
     // Quit on 'q', 'ESC', or Ctrl+C
     this.screen.key(['q', 'Q', 'escape', 'C-c'], () => {
@@ -69,6 +71,13 @@ class Controls {
         this.onTogglePerfCallback();
       }
     });
+
+    // Toggle color mode on 'c'
+    this.screen.key(['c', 'C'], () => {
+      if (this.onToggleColorCallback) {
+        this.onToggleColorCallback();
+      }
+    });
   }
 
   /**
@@ -94,6 +103,7 @@ class Controls {
       chalk.white('→, .       ') + chalk.gray('- Next character set'),
       chalk.white('←, ,       ') + chalk.gray('- Previous character set'),
       chalk.white('p          ') + chalk.gray('- Toggle perf overlay'),
+      chalk.white('c          ') + chalk.gray('- Toggle color mode'),
       '',
       chalk.dim('Press h or ? to close this help')
     ].join('\n');

@@ -19,6 +19,7 @@ class FFmpegCapture {
     this.platform = os.platform();
     this.framesReceived = 0;
     this.lastLogTime = Date.now();
+    this.colorMode = false;
   }
 
   /**
@@ -33,7 +34,7 @@ class FFmpegCapture {
     // Common output settings
     const outputArgs = [
       '-vf', `scale=${width}:${height}`,
-      '-pix_fmt', 'gray',
+      '-pix_fmt', this.colorMode ? 'rgb24' : 'gray',
       '-f', 'rawvideo',
       '-'
     ];
@@ -109,7 +110,7 @@ class FFmpegCapture {
   async initialize(width, height) {
     this.width = width;
     this.height = height;
-    this.bytesPerFrame = width * height;  // 1 byte per pixel (grayscale)
+    this.bytesPerFrame = width * height * (this.colorMode ? 3 : 1);
 
     // Silent initialization - logs available with 'l' key
 
@@ -204,6 +205,17 @@ class FFmpegCapture {
    * @param {number} width - New width
    * @param {number} height - New height
    */
+  setColorMode(enabled) {
+    const wasRunning = this.isRunning;
+    this.stop();
+    this.colorMode = enabled;
+    this.bytesPerFrame = this.width * this.height * (this.colorMode ? 3 : 1);
+    this.currentBuffer = null;
+    if (wasRunning) {
+      this.start();
+    }
+  }
+
   updateResolution(width, height) {
     if (width === this.width && height === this.height) {
       return;
@@ -215,7 +227,7 @@ class FFmpegCapture {
     // Update dimensions
     this.width = width;
     this.height = height;
-    this.bytesPerFrame = width * height;
+    this.bytesPerFrame = width * height * (this.colorMode ? 3 : 1);
 
     // Restart with new dimensions
     this.start();
